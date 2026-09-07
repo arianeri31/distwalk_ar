@@ -262,6 +262,7 @@ int conn_enable_zc(conn_info_t *conn) {
     }
     conn->use_zc = 1;
     dw_log("ZEROCOPY enabled on conn_id=%d\n", conn_get_id_by_ptr(conn));
+    fprintf(stderr, "ZEROCOPY enabled on conn_id=%d\n", conn_get_id_by_ptr(conn));
     return 0;
 }
 
@@ -679,6 +680,8 @@ static size_t conn_zc_release_confirmed(conn_info_t *conn) {
     return released_size;
 }
 
+// read ZC notifications and return -1 for anything that is not a zc notification 
+// return the number of notifications read otherwise
 int conn_read_zc_notifications(conn_info_t *conn) {
     int count = 0;
 
@@ -717,6 +720,7 @@ int conn_read_zc_notifications(conn_info_t *conn) {
                     // in case of ZEROCOPY fallback 
                     if (serr->ee_code == SO_EE_CODE_ZEROCOPY_COPIED) {
                         dw_log("ZEROCOPY fallback to copy on conn_id=%d\n",conn_get_id_by_ptr(conn));
+                        fprintf(stderr, "ZEROCOPY fallback to copy on conn_id=%d\n", conn_get_id_by_ptr(conn));
                     }
 
                     uint32_t first_send_id = serr->ee_info;
@@ -726,11 +730,20 @@ int conn_read_zc_notifications(conn_info_t *conn) {
 
                     dw_log("ZEROCOPY notification conn_id=%d, ids=[%u,%u]\n",
                            conn_get_id_by_ptr(conn), first_send_id, last_send_id);
+                    fprintf(stderr, "ZEROCOPY notification conn_id=%d, ids=[%u,%u]\n",
+                           conn_get_id_by_ptr(conn), first_send_id, last_send_id);
 
                     conn_zc_confirm_range(conn, first_send_id, last_send_id);
                     size_t released = conn_zc_release_confirmed(conn);
 
                     dw_log("ZEROCOPY released %zu bytes\n", released);
+                    fprintf(stderr, "ZEROCOPY released %zu bytes\n", released);
+                }
+                // in case of other errors, return -1 so that the caller can handle it and close the connection
+                else {
+                    dw_log("Error notification on conn_id=%d: origin=%u, code=%u, info=%u, data=%u\n",
+                           conn_get_id_by_ptr(conn), serr->ee_origin, serr->ee_code, serr->ee_info, serr->ee_data);
+                    return -1;
                 }
             }
         }
